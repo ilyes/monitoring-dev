@@ -1,0 +1,6 @@
+https://github.com/wkulhanek/openshift-prometheus.git
+https://github.com/feedhenry/sync-metrics-openshift
+
+
+remote_write:
+- url: "http://influxdb:8086/api/v1/prom/write?u=user&p=pass&db=prometheus"
