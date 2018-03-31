@@ -7,10 +7,6 @@ parameters:
 - name: STORAGE_SIZE
   value: 5Gi
   description: The size of the persistent storage for Grafana
-- name: HOST_URL
-  value: perf.example.com
-  description: The url to access the grafana dashboard
-  required: true
 objects:
 - apiVersion: v1
   kind: PersistentVolumeClaim
@@ -81,15 +77,3 @@ objects:
     triggers:
     - type: ConfigChange
   status: {}
-- apiVersion: v1
-  kind: Route
-  metadata:
-    creationTimestamp: null
-    labels:
-      metrics: grafana
-    name: grafana-route
-  spec:
-    host: ${HOST_URL}
-    to:
-      kind: Service
-      name: grafana-svc
