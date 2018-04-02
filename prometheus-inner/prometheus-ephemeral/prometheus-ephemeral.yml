@@ -35,9 +35,6 @@ metadata:
     template.openshift.io/bindable: "false"
   message: |-
     The following service has been created in your project: prometheus.
-
-    For more information about using this template, including OpenShift considerations, see https://github.com/adnovum/adnovum-openshift-templates/blob/master/prometheus-ephemeral/README.md
-
 parameters:
 - name: PROMETHEUS_IMAGE
   description: "Prometheus image to use"
@@ -53,7 +50,7 @@ parameters:
   value: quay.io/coreos/kube-state-metrics:v1.2.0
 - name: KUBE_STATE_METRICS_COLLECTORS
   description: List of kube-state-metrics collectors to configure
-  # note: "cronjobs" disabled for now due to https://github.com/kubernetes/kube-state-metrics/issues/337
+
   required: true
   value: replicationcontrollers,persistentvolumeclaims,daemonsets,jobs,limitranges,replicasets,resourcequotas,services,deployments,statefulsets,pods
 
@@ -87,7 +84,7 @@ objects:
   metadata:
       name: prometheus
 
-- apiVersion: authorization.openshift.io/v1
+- apiVersion: v1
   kind: RoleBinding
   metadata:
     name: prometheus-view
@@ -100,12 +97,46 @@ objects:
 - apiVersion: v1
   kind: ConfigMap
   metadata:
+    name: prometheus-rules
+  data:
+
+
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
     name: prometheus-config
   data:
+      "alerting.rules": |
+        groups:
+        - name: example-rules
+          interval: 30s # defaults to global interval
+          rules:
+          - alert: Node Down
+            expr: up{job="kubernetes-nodes"} == 0
+            annotations:
+              miqTarget: "ContainerNode"
+              severity: "HIGH"
+              message: "{{$labels.instance}} is down"
+
+      "recording.rules": |
+        groups:
+        - name: aggregate_container_resources
+          rules:
+          - record: container_cpu_usage_rate
+            expr: sum without (cpu) (rate(container_cpu_usage_seconds_total[5m]))
+          - record: container_memory_rss_by_type
+            expr: container_memory_rss{id=~"/|/system.slice|/kubepods.slice"} > 0
+          - record: container_cpu_usage_percent_by_host
+            expr: sum by (kubernetes_io_hostname,type)(rate(container_cpu_usage_seconds_total{id="/"}[5m])) / on (kubernetes_io_hostname,type) machine_cpu_cores
+          - record: apiserver_request_count_rate_by_resources
+            expr: sum ithout (client,instance,contentType) (rate(apiserver_request_count[5m]))
       "prometheus.yml.template": |
           global:
             scrape_interval:     15s
             evaluation_interval: 15s
+          rule_files:
+            - 'alerting.rules'
+            - 'recording.rules'
           scrape_configs:
           - job_name: 'prometheus'
             static_configs:
