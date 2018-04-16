@@ -100,7 +100,7 @@ objects:
             static_configs:
             - targets: ['localhost:9090']
         remote_read:
-        - url: "http://influxdb-svc-esgtest1-test.b2v-dev-cnap.bmwgroup.net/api/v1/prom/read?u=prom&p=prom&db=prometheus"
+        - url: "http://influxdb-svc:8086/api/v1/prom/read?u=prom&p=prom&db=prometheus"
           read_recent: true
 - apiVersion: v1
   kind: DeploymentConfig
