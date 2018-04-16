@@ -1,0 +1,179 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: alertmanager
+  annotations:
+    "openshift.io/display-name": Prometheus Alert Manager
+    description: |
+      A monitoring solution for an OpenShift cluster - collect and gather metrics from nodes, services, and the infrastructure. This component provides the Alert Manager.
+    iconClass: icon-cogs
+    tags: "monitoring,prometheus,alertmanager,time-series"
+parameters:
+- description: The location of the prometheus image
+  name: IMAGE_ALERTMANAGER
+  value: prom/alertmanager:latest
+- name: VOLUME_CAPACITY
+  displayName: Volume Capacity
+  description: Volume space available for data, e.g. 512Mi, 2Gi.
+  value: 4Gi
+  required: true
+- name: WEBHOOK_URL
+  displayName: Webhook URL
+  description: URL for the Webhook to send alerts.
+  required: true
+  value: http://localhost:9099/topics/alerts
+- description: The location of alert-buffer image
+  name: IMAGE_ALERT_BUFFER
+  value: openshift/prometheus-alert-buffer:v0.0.2
+
+objects:
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: alertmanager
+  spec:
+    to:
+      name: alertmanager
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/scheme: http
+    labels:
+      name: alertmanager
+    name: alertmanager
+  spec:
+    ports:
+    - name: alertmanager
+      port: 9093
+      protocol: TCP
+      targetPort: 9093
+    selector:
+      app: alertmanager
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: alertmanager
+    name: alertmanager
+  spec:
+    replicas: 1
+    selector:
+      app: alertmanager
+      deploymentconfig: alertmanager
+    template:
+      metadata:
+        labels:
+          app: alertmanager
+          deploymentconfig: alertmanager
+        name: alertmanager
+      spec:
+        containers:
+        - name: alert-buffer
+          args:
+          - --storage-path=/alert-buffer/messages.db
+          image: ${IMAGE_ALERT_BUFFER}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "200Mi"
+          volumeMounts:
+          - mountPath: /alert-buffer
+            name: alert-buffer-data
+          ports:
+          - containerPort: 9099
+            name: alert-buf
+        - name: alertmanager
+          args:
+          - --config.file=/etc/alertmanager/config.yml
+          - --storage.path=/alertmanager
+          image: ${IMAGE_ALERTMANAGER}
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /#/status
+              port: 9093
+              scheme: HTTP
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /#/status
+              port: 9093
+              scheme: HTTP
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+
+          volumeMounts:
+          - mountPath: /etc/alertmanager
+            name: config-volume
+          - mountPath: /alertmanager
+            name: data-volume
+        restartPolicy: Always
+        volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: alertmanager-data-pvc
+        - name: alert-buffer-data #TODO: make persistent
+          emptyDir: {}
+        - configMap:
+            name: alertmanager
+          name: config-volume
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: alertmanager-data-pvc
+  spec:
+    accessModes:
+    - ReadWriteMany
+    resources:
+      requests:
+        storage: "${VOLUME_CAPACITY}"
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: alertmanager
+  data:
+    config.yml: |
+      global:
+
+      # The root route on which each incoming alert enters.
+      route:
+        # The root route must not have any matchers as it is the entry point for
+        # all alerts. It needs to have a receiver configured so alerts that do not
+        # match any of the sub-routes are sent to someone.
+        receiver: 'webhook'
+
+        # The labels by which incoming alerts are grouped together. For example,
+        # multiple alerts coming in for cluster=A and alertname=LatencyHigh would
+        # be batched into a single group.
+        group_by: ['alertname', 'cluster']
+
+        # When a new group of alerts is created by an incoming alert, wait at
+        # least 'group_wait' to send the initial notification.
+        # This way ensures that you get multiple alerts for the same group that start
+        # firing shortly after another are batched together on the first
+        # notification.
+        group_wait: 30s
+
+        # When the first notification was sent, wait 'group_interval' to send a batch
+        # of new alerts that started firing for that group.
+        group_interval: 5m
+
+        # If an alert has successfully been sent, wait 'repeat_interval' to
+        # resend them.
+        repeat_interval: 3h
+
+      receivers:
+      - name: 'webhook'
+        webhook_configs:
+        - send_resolved: true
+          url: '${WEBHOOK_URL}'
