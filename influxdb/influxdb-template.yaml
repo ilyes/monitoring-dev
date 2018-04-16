@@ -63,7 +63,20 @@ objects:
           metrics: influxdb
       spec:
         containers:
-        - env:
+        - name: influxdb
+          env:
+          - name: INFLUXDB_HTTP_AUTH_ENABLED
+            value: "true"
+          - name: INFLUXDB_DB
+            value: "prometheus"
+          - name: INFLUXDB_ADMIN_USER
+            value: "admin"
+          - name: INFLUXDB_ADMIN_PASSWORD
+            value: "admin"
+          - name: INFLUXDB_USER
+            value: "prom"
+          - name: INFLUXDB_USER_PASSWORD
+            value: "prom"
           - name: INFLUXDB_UDP_ENABLED
             value: "true"
           - name: INFLUXDB_UDP_BIND_ADDRESS
@@ -71,8 +84,7 @@ objects:
           - name: INFLUXDB_UDP_DATABASE
             value: udp
           image: influxdb
-          imagePullPolicy: Always
-          name: influxdb
+          imagePullPolicy: Always 
           ports:
           - containerPort: 8086
             protocol: TCP
